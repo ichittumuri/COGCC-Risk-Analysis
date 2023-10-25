@@ -1,3 +1,6 @@
+# dont upload the data
+ECMC_CSM_Flowline_Data_Access/
+
 # macos stuff
 .DS_Store
 **/.DS_Store
