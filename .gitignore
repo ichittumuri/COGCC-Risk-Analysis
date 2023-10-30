@@ -1,3 +1,6 @@
+# dont upload conda stuff
+.conda/
+
 # dont upload the data
 ECMC_CSM_Flowline_Data_Access/
 
