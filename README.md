@@ -11,5 +11,5 @@ FlowlineSpreadsheet_Mines:
 - While we do have other flowline system facilities data, these cannot be connected on a 1:1 basis the same way (no lat/longs). 
 
 Flowline-Related Spills (2022):
-- This is (as mentioned on monday) the refined spills list. If you require extra data, you could always run lookup via 'trkg_num' through the most-recent data.
+- This is (as mentioned on monday) the refined spills list. If you require extra data, you could always run lookup via 'trkg_num' through the most-recent data https://ecmc.state.co.us/documents/data/downloads/environmental/SpillsDownload.html.
 - Primarily, the field you'll want to use is 'Root Cause Type' and I included the lat/longs obviously. Also attached are our definitions of those failure modes.
