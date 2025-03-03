@@ -28,8 +28,6 @@ geo_data <- st_read("flowlines_pop_dems.geojson")
 anyNA(geo_data$risk_probability)
 ```
 
-
-
 ```{r}
 str(geo_data)
 ```

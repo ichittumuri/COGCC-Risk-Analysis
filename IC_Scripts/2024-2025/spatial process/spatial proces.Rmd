@@ -1,0 +1,494 @@
+---
+title: "spatial process"
+output: pdf_document
+date: "2025-03-03"
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+# New cell= command, option, I or alt, windows symbol, I 
+# Run = windows symbol, enter 
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+knitr::opts_knit$set(root.dir = "/Users/ichittumuri/Desktop/MINES/COGCC-Risk-Analysis/Data")
+```
+
+```{r}
+# Load required libraries
+library(sf)        # For spatial data handling
+library(spBayes)   # For Bayesian spatial models
+library(MASS)      # For generalized linear models
+library(spdep)     # For spatial correlation structures
+library(ggplot2)   # For visualization
+library(dplyr)     # For data wrangling
+# library(fmesher)
+# library(INLA)      # Optional faster spatial GLM alternative
+```
+
+# Import Dataset 
+
+```{r cars}
+df <- st_read("flowlines_pop_dems.geojson")
+```
+```{r}
+colSums(is.na(df))  # Check missing data per column
+```
+```{r}
+# Filter rows where root_cause is NA and count by risk values
+table(df$risk[is.na(df$root_cause)])
+```
+
+```{r}
+unique(df$root_cause)
+```
+```{r}
+df$root_cause[is.na(df$root_cause)] <- "None"
+```
+
+```{r}
+str(df)
+```
+
+```{r}
+unique(df$risk)
+```
+
+```{r}
+df <- df %>% select(-Max_Elevation, -Min_Elevation)
+```
+
+```{r}
+# Duplicate data set 
+df_encoded <- df
+```
+
+```{r}
+# One-hot encoding
+df_encoded$operator_number <- as.factor(df$operator_number)
+df_encoded$flowline_id <- as.factor(df$flowline_id)
+df_encoded$location_id <- as.factor(df$location_id)
+df_encoded$status <- as.factor(df$status)
+df_encoded$fluid <- as.factor(df$fluid)
+df_encoded$material <- as.factor(df$material)
+df_encoded$location_type <- as.factor(df$location_type)
+df_encoded$root_cause <- as.factor(df$root_cause)
+```
+
+```{r}
+str(df_encoded)
+```
+
+```{r}
+colSums(is.na(df_encoded))  # Check missing data per column
+```
+
+# EDA
+
+```{r}
+library(leaflet)
+
+leaflet(df_encoded) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolylines(color = ~ifelse(risk == 1, "red", "blue"), weight = 2, opacity = 0.7) %>%
+  addLegend("bottomright", colors = c("blue", "red"), labels = c("No Spill", "Spill"),
+            title = "Risk Level")
+```
+
+# Preprocessing 
+
+```{r}
+# Use the factor-encoded dataset
+df_model <- df_encoded
+
+# Extract centroid coordinates from the geometry column
+df_model$lon <- st_coordinates(st_centroid(df_encoded$geometry))[,1]
+df_model$lat <- st_coordinates(st_centroid(df_encoded$geometry))[,2]
+df_model <- df_model[!is.na(df_model$lon) & !is.na(df_model$lat), ]
+
+# Check binary response variable
+table(df_model$risk)  # Ensure it's 0/1
+
+# Select relevant predictors including the factor variables
+df_model <- df_model %>%
+  select(risk, operator_number, flowline_id, location_id, status, fluid, 
+         material, location_type, root_cause, diameter_in, length_ft, 
+         max_operating_pressure, line_age_yr, average_pop_density, Avg_Elevation, lon, lat)
+```
+
+# Models
+
+```{r}
+glm_model <- glm(risk ~ diameter_in + length_ft + max_operating_pressure + 
+                 line_age_yr + average_pop_density + Avg_Elevation, 
+                 data = df_model, 
+                 family = binomial)
+
+summary(glm_model)  # Check model output
+```
+
+
+```{r}
+# Extract residuals from logistic regression
+df_model$residuals <- residuals(glm_model, type = "deviance")
+
+# Create spatial weights matrix based on nearest neighbors
+coords <- cbind(df_model$lon, df_model$lat)
+nb <- knn2nb(knearneigh(coords, k = 5))  # 5 nearest neighbors
+lw <- nb2listw(nb, style = "W")
+
+# Moran’s I test for spatial autocorrelation
+moran_test <- moran.test(df_model$residuals, lw)
+print(moran_test)
+```
+
+```{r}
+library(spBayes)
+
+coords <- cbind(df_model$lon, df_model$lat)
+
+# Define starting values with added 'nu' parameter
+starting <- list(
+  beta = rep(0, 7),  
+  phi = 1 / max(dist(coords)),  # Adjusted phi for stability
+  sigma.sq = 2,  
+  tau.sq = 1,  
+  w = rep(0, nrow(coords)),  
+  nu = 1.5  # Added nu for Matérn covariance model
+)
+
+# Define tuning parameters (including nu)
+tuning <- list(
+  beta = rep(0.2, 7),  
+  phi = 0.5,  
+  sigma.sq = 0.5,  
+  tau.sq = 0.5,  
+  w = rep(0.5, nrow(coords)),  
+  nu = 0.1  # Tuning for nu
+)
+
+# Define priors
+priors <- list(
+  beta.norm = list(rep(0, 7), diag(100, 7)),  
+  phi.unif = c(0.1, 10 / max(dist(coords))),  
+  sigma.sq.ig = c(2, 2),  
+  tau.sq.ig = c(2, 2),
+  nu.unif = c(0.5, 2)  # Prior range for nu
+)
+
+# Run Bayesian spatial GLM
+spatial_model <- spGLM(risk ~ diameter_in + length_ft + max_operating_pressure + 
+                         line_age_yr + average_pop_density + Avg_Elevation, 
+                       coords = coords, 
+                       data = df_model,
+                       family = "binomial",
+                       starting = starting,
+                       tuning = tuning,  
+                       priors = priors,
+                       cov.model = "exponential",  # Matérn covariance model requires nu
+                       n.samples = 2000)  
+
+# Check model summary
+summary(spatial_model)
+```
+
+```{r}
+install.packages("INLA", repos="https://inla.r-inla-download.org/R/testing")
+```
+
+
+```{r}
+library(INLA)
+
+# Define the model formula
+formula <- risk ~ diameter_in + length_ft + max_operating_pressure +
+  line_age_yr + average_pop_density + Avg_Elevation + f(lon, lat, model="spde")
+
+# Fit spatial GLM using INLA
+spatial_inla <- inla(formula, family="binomial", data=df_model, 
+                     control.predictor=list(compute=TRUE))
+
+summary(spatial_inla)  # Check results
+```
+
+```{r}
+# Compare AIC values
+AIC(glm_model)  # Standard logistic regression
+AIC(spatial_model)  # Bayesian spatial logistic regression
+```
+
+```{r}
+head(df_network)
+```
+
+
+```{r}
+library(sfnetworks)
+library(dplyr)
+
+# Convert to an sf object first, ensuring attributes are retained
+df_model_sf <- st_as_sf(df_model, coords = c("lon", "lat"), crs = 4326)
+
+# Convert to a network while preserving attributes
+df_network <- as_sfnetwork(df_model_sf, directed = FALSE)
+
+# Extract node attributes and confirm risk is present
+df_nodes <- df_network %>% activate(nodes) %>% as_tibble()
+
+df_nodes <- df_nodes %>%
+  st_join(df_model %>% select(lon, lat, risk))
+
+if (!"risk" %in% colnames(df_nodes)) {
+    stop("Variable 'risk' still missing after conversion.")
+}
+
+# Fit a spatial autoregressive model along the network
+network_model <- glm(risk ~ diameter_in + length_ft + max_operating_pressure + 
+                       line_age_yr + average_pop_density + Avg_Elevation,
+                     data = df_nodes, family = binomial)
+
+summary(network_model)
+```
+
+
+
+```{r}
+print(colnames(df_model))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+library(sf)
+# library(rgeos)
+library(ggplot2)
+
+# Ensure data is in sf format
+df_model <- df_encoded
+
+# Compute pairwise Hausdorff distance between flowlines
+# dist_matrix <- gDistance(st_geometry(df_model), byid = TRUE)
+
+# Compute distance matrix (Euclidean distance by default)
+dist_matrix <- st_distance(df_model)
+
+# Convert to data frame for visualization
+dist_df <- as.data.frame(as.table(dist_matrix))
+
+# Rename columns for clarity
+colnames(dist_df) <- c("Flowline_1", "Flowline_2", "Hausdorff_Distance")
+
+# Show the first few rows
+head(dist_df)
+```
+
+```{r}
+head(dist_df)
+```
+
+
+```{r}
+ggplot(dist_df, aes(x = Flowline_1, y = Flowline_2, fill = Hausdorff_Distance)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma") +
+  theme_minimal() +
+  labs(title = "Spatial Dependency Between Flowlines (Hausdorff Distance)",
+       x = "Flowline ID", y = "Flowline ID")
+```
+
+```{r}
+library(sf)
+library(dplyr)
+
+# Read original MULTILINESTRING dataset
+df_original <- st_read("matched_flowlines.geojson")
+
+# Ensure they have the same CRS (Coordinate Reference System)
+df_encoded <- st_transform(df_encoded, st_crs(df_original))
+```
+
+```{r}
+head(df_encoded)
+```
+
+```{r}
+# Use the factor-encoded dataset
+df_model <- df_encoded
+
+df_original_geom <- df_original %>% select(geometry)  # Keep only the geometry
+
+# Spatial join: assign each 50m segment to its parent MULTILINESTRING
+df_model <- st_join(df_model, df_original_geom, join = st_within, suffix = c("", "_parent"))
+
+# Count how many segments belong to each original flowline
+segment_counts <- df_model %>%
+  group_by(geometry) %>%  # Group by the original MULTILINESTRING geometry
+  summarise(num_segments = n())
+
+# View number of segments per original flowline
+print(segment_counts)
+```
+
+```{r}
+head(df_model)
+```
+
+```{r}
+# Use the factor-encoded dataset
+df_model <- df_encoded
+
+# Spatial join: assign each 50m segment to its parent MULTILINESTRING
+df_model <- st_join(df_model, df_original, join = st_within)
+
+# Count how many segments belong to each original flowline
+segment_counts <- df_model %>%
+  group_by(geometry) %>%  # Group by the original MULTILINESTRING geometry
+  summarise(num_segments = n())
+
+# View number of segments per original flowline
+print(segment_counts)
+```
+
+
+```{r}
+head(df_model)
+```
+
+Your dataset is in NAD83 (EPSG:4269), which uses degrees (longitude/latitude) as units. However, dnearneigh() expects distances in meters, so you need to reproject the data to a projected CRS before computing neighbors.
+
+```{r}
+library(sf)
+
+# Reproject to a UTM Zone or an Equal Area projection
+df_model <- st_transform(df_encoded, crs = 5070)  # NAD83 Albers Equal Area (meters)
+
+# Check the new CRS
+st_crs(df_model)
+```
+
+1. Using sf Objects Directly in Spatial Models
+- Some spatial models (like geostatistical models) require point data, but others (like spatial autoregressive models) can directly use LINESTRING geometries.
+- You can avoid converting to centroids and instead use the full flowline data by:
+  - Constructing spatial neighbors (e.g., flowlines that are spatially connected).
+  - Using a network-based spatial correlation model.
+  
+2. Adjusting Spatial Weight Matrices for Line Data
+- Instead of using point-based nearest neighbors, you can:
+- Use contiguity-based neighbors, where flowlines that share a boundary are considered neighbors.
+- Construct a network distance matrix, where spatial relationships are based on shared LINESTRING intersections.
+ 
+```{r}
+library(spdep)
+
+# Ensure valid geometries before computing centroids
+df_model$geometry <- st_make_valid(df_model$geometry)
+
+# Compute centroids in meters
+df_model$centroid <- st_centroid(df_model$geometry)
+
+# Define a reasonable distance threshold (e.g., 100 meters)
+distance_threshold <- 100  
+
+# Compute distance-based neighbors
+distance_nb <- dnearneigh(df_model$centroid, d1 = 0, d2 = distance_threshold)
+
+# Check results
+summary(distance_nb)
+```
+
+
+```{r}
+# Assuming df_original contains the original MULTILINESTRING geometries
+df_original <- st_read("matched_flowlines.geojson")
+
+# Check how many segments exist per original line
+df_original %>%
+  group_by() %>%
+  summarise(n_segments = n())
+```
+
+```{r}
+# Use the factor-encoded dataset
+df_model <- df_encoded
+
+# Extract centroid coordinates from the geometry column
+df_encoded$lon <- st_coordinates(st_centroid(df$geometry))[,1]
+df_encoded$lat <- st_coordinates(st_centroid(df$geometry))[,2]
+
+# Check binary response variable
+table(df_model$risk)  # Ensure it's 0/1
+
+# Select relevant predictors including the factor variables
+df_model <- df_model %>%
+  select(risk, operator_number, flowline_id, location_id, status,
+         fluid,material, location_type, root_cause, diameter_in,
+         length_ft, max_operating_pressure, line_age_yr,
+         average_pop_density, Avg_Elevation, lon, lat)
+```
+
+```{r}
+glm_model <- glm(risk ~ operator_number + flowline_id + location_id +
+                   status + fluid + material + location_type +
+                   root_cause + diameter_in + length_ft +
+                   max_operating_pressure + line_age_yr +
+                   average_pop_density + Avg_Elevation, 
+                 data = df_model, 
+                 family = binomial)
+
+summary(glm_model)  # Check model output
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
