@@ -145,6 +145,7 @@ print(moran_test)
 
 ```{r}
 # Fit thin-plate spline (Tps) model to capture spatial structure
+# spatial process function instead of tps 
 spatial_model <- Tps(coords, df_model$residuals)
 
 # Check spatial model summary
@@ -200,7 +201,8 @@ AIC(glm_model)  # Logistic regression without spatial effects
 AIC(glm_spatial)  # Logistic regression with spatial effects from `fields`
 ```
 
-
+create surface plot
+std error uncertain 
 
 
 

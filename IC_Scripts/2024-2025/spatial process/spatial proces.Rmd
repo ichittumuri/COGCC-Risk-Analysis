@@ -143,6 +143,13 @@ moran_test <- moran.test(df_model$residuals, lw)
 print(moran_test)
 ```
 
+
+Select a threshold for the points that are too close to each other.
+
+spill - no spill, discard no spill
+spill - spill, avg
+no spill - no spill, avg
+
 ```{r}
 library(spBayes)
 
@@ -192,6 +199,9 @@ spatial_model <- spGLM(risk ~ diameter_in + length_ft + max_operating_pressure +
 # Check model summary
 summary(spatial_model)
 ```
+
+
+
 
 ```{r}
 install.packages("INLA", repos="https://inla.r-inla-download.org/R/testing")
