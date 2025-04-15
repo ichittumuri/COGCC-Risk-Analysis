@@ -126,3 +126,4 @@ env/
 # Windows
 Thumbs.db
 Desktop.ini
+.Rproj.user
