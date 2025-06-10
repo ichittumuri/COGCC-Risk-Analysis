@@ -1,0 +1,227 @@
+---
+title: "HW06 Spatial Statistics"
+author: "Isabella Chittumuri"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+setwd("~/Documents/MINES/Spatial")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Some setup 
+
+```{r}
+suppressMessages(library( fields))
+source("makeKrigingWeights.R")
+library(fields)
+```
+
+# Problem 1
+
+This problem will revisit the ozone data set example and give you the practice in reproducing the Universal Kriging computation.
+The idea is do the computations "by hand" and compare to the fields functions that implement universal Kriging. 
+  
+To setup the data set load the fields package and 
+```{r}
+data(ozone2)
+s<- ozone2$lon.lat
+# day 16
+y<- ozone2$y[16,]
+good<- !is.na( y)
+s<- s[good,]
+y<- y[good]
+```
+
+This assignment  will  make use of the  function **spatialProcess**  and its supporting methods to serve as a benchmark. We will cover estimating the covariance parameters later in the course and so for this assignment assume they are fixed and take their values from the spatialProcess MLE fit listed below. 
+
+The covariance model used here is the exponential with scale parameter **aRange**. In places in class we have also referred to this parameter as $\theta$. See Section 4.5 in the text for the details of this covariance and the Matern family. Here we use the fact that a Matern covariance with smoothness .5 is just the exponential. 
+
+```{r}
+obj<- spatialProcess( s, y, smoothness=.5)
+sigma2<- obj$summary["sigma2"]
+tau<- obj$summary["tau"]
+aRange<- obj$summary["aRange"]
+```
+
+Note that the parameter ```tau ``` refers to the measurement error
+standard deviation. Be sure to use ``` tau^2``` in your
+expressions
+that involve the variance and covariances. 
+
+The linear model (aka the fixed part) in this fit has three parameters a constant and linear terms in longitude and latitude. That is, the "X" matrix for the linear part is 
+
+```{r}
+X <-  cbind(1, s)
+```
+
+## 1(a) 
+Using the parameters specified above compute explicitly the GLS estimate for the parameters. These should match ```obj$beta``` in the R object. 
+
+```{r}
+d = rdist(s,s)
+K = sigma2*exp(-d/aRange)
+M = K + tau^2*diag(147)
+
+betaHat = solve(t(X)%*%solve(M)%*%X)%*%t(X)%*%solve(M)%*%y
+
+betaHat
+obj$beta
+```
+
+## 1(b)
+- Compute explictly the predicted values at the observations.
+See  Equation (6.2) in the text book for a concise formula for this but noting that $\hat{\beta}$ is the GLS estimate. 
+
+- For this case explain why the predicted values at the observed locations to not match the data values exactly.
+
+```{r}
+x <- t(X)
+M = K + tau^2*diag(147)
+d = rdist(s,s)
+k = sigma2*exp(-d/aRange)
+
+preds <- t(x)%*%betaHat + t(k)%*%solve(M)%*%(y-X%*%betaHat)
+
+cbind(y,preds)
+```
+
+The predicted values aren't exactly the same as the observed values because they're based on the model. If they matched perfectly everywhere, our model might be over fit the data and would could struggle with new data.
+
+## 1(c) 
+
+The function ```makeKrigingWeights``` will create the weight matrix referred to in  
+ equation (6.3) of the text. 
+ For example the code  
+ 
+ ```{r}
+ sStar<- s
+ W<- makeKrigingWeights(obj, sStar)
+ test.for.zero( t(W)%*%y, predict(obj, sStar))
+ ```
+ 
+ will find the predictions at the observation locations and 
+ then test that they agree with the predictions from the
+ spatialProcess fit. ```t(W)``` is also the smoother matrix
+ referred to in the text although 
+ ```makeKrigingWeights``` will work for any
+ set of locations, not just the observation locations. 
+ 
+Evaluate the formula in 6.2.6 for the covariance of
+the prediction errors and for the locations on the  5X5 grid defined below:  
+ 
+```{r}
+sStar<- make.surface.grid( 
+      list(x = seq( -94,-82,length.out=5),
+           y = seq( 36,45, length.out=5) 
+           )
+          )
+
+x <- rbind(1, t(sStar))
+
+k = sigma2*exp(-rdist(sStar,s)/aRange)
+reverse_k = sigma2*exp(-rdist(s,sStar)/aRange)
+
+W <- makeKrigingWeights(obj, sStar)
+
+cov_errors <- t(W)%*%M%*%W - k%*%W - t(W)%*%reverse_k + 
+  sigma2*exp(-rdist(sStar, sStar)/aRange)
+```
+
+Find the square root of the diagonal elements of this
+covariance matrix and compare to 
+
+```{r}
+SE<- predictSE( obj, sStar)
+
+cbind(SE, sqrt(diag(cov_errors)))
+```
+They should match!
+
+## 1(d) GRAD
+Explain why the function ```makeKrigingWeights``` works.
+
+The function makeKrigingWeights works by calculating the weights used in kriging predictions. In kriging, predictions at unsampled locations are made by combining the weighted values of nearby observed locations. The makeKrigingWeights function computes these weights based on the spatial distances between the prediction location and observed points, as well as the covariance parameters obtained from the spatial model. It captures the essence of spatial autocorrelation: nearby points are more similar than distant ones. It works because by using these calculated weights, the function enables the creation of accurate predictions at unsampled locations, incorporating both the observed data and the spatial patterns present in the dataset
+
+# Problem 2 
+Modify the code in 1(c) to be a 20X20 grid, so now sStar is 
+400 points. 
+Compute the prediction error covariance matrix, find the cholesky decomposition, and call this ```cholPredCov```
+Now generate a conditional simulation for the predicted field according to 
+
+```
+set.seed( 432)
+error<- t(cholPredCov)%*% rnorm(400)
+condSim<- predict( obj, sStar) + error
+```
+
+```{r}
+sGrid <- make.surface.grid(
+  list(x = seq( -94,-82,length.out=20),
+       y = seq( 36,45,length.out=20)
+       )
+)
+
+x <- rbind(1, t(sGrid))
+k = sigma2*exp(-rdist(sGrid,s)/aRange)
+reverse_k = sigma2*exp(-rdist(s,sGrid)/aRange)
+
+W <- makeKrigingWeights(obj, sGrid)
+
+cov_errors <- t(W)%*%M%*%W - k%*%W - t(W)%*%reverse_k + 
+  sigma2*exp(-rdist(sGrid,sGrid)/aRange)
+
+cholPredCov <- chol(cov_errors) 
+
+set.seed(432)
+error <- t(cholPredCov)%*%rnorm(400)
+condSim <- predict(obj, sGrid) + error
+```
+
+## 2(a) 
+Use ```bubblePlot``` to visualize the simulated field,
+add the data
+locations, and also the outline of the US states.  You may want
+to adjust the size of the bubble points so that they are almost touching and use  ```highlight ==FALSE``` to
+create a more finished and readable plot. 
+
+```{r}
+XStar <- cbind(1, sGrid)
+
+kStar <- sigma2*exp(-rdist(sGrid, s)/aRange)
+
+yHat <- kStar%*%solve(M)%*%(y-X%*%betaHat)
+
+fHat <- XStar%*%betaHat + yHat
+
+bubblePlot(sGrid, fHat, highlight = FALSE, col=tim.colors())
+world(add=TRUE, col="grey", lwd=2)
+US(add=TRUE, col="black")
+```
+
+
+## 2(b) 
+*Here is an easy  final question just to fix concepts.* 
+
+For the random field generated above and called ```condSim```,  what is its mean conditional on the data and what is its covariance? 
+
+condSim is distributed multivariate normal with mean $\hat{f*}$ and covariance $\Sigma$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
