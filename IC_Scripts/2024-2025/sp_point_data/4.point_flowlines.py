@@ -191,4 +191,4 @@ else:
 # ----------------------------------------------------------------------
 # 7. Save to GeoJSON
 # ----------------------------------------------------------------------
-final_gdf.to_file("flowlines_as_points.geojson", driver="GeoJSON")
+final_gdf.to_file("final_point_data.geojson", driver="GeoJSON")

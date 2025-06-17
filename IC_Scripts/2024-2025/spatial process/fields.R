@@ -20,7 +20,7 @@ drop.cols <- c("unique_id", "operator_number", "flowline_id", "location_id",
                "construct_date", "spill_date", "root_cause")
 id_coords_risk <- flowlines %>% select(unique_id, X, Y, risk)
 model_df <- id_coords_risk %>% filter(!is.na(risk), !is.na(X), !is.na(Y))
-coords_matrix <- as.matrix(model_df %>% select(X, Y))
+coords_matrix <- as.data.frame(model_df %>% select(X, Y))
 y_binary <- model_df$risk
 
 # 5) Run spatial IRLS smoother
@@ -38,7 +38,7 @@ predictions_df <- data.frame(
 )
 predictions_sf <- st_as_sf(predictions_df, coords = c("X", "Y"), crs = 4326)
 st_write(predictions_sf, "flowline_spatial_logistic_predictions.geojson", delete_dsn = TRUE)
-
+help(mKrig)
 # 7) Quick Leaflet preview
 leaflet(predictions_sf) %>% 
   addProviderTiles(providers$CartoDB.Positron) %>% 
