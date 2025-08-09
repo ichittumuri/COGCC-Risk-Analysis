@@ -1,0 +1,418 @@
+---
+title: "sp_only"
+output: html_document
+date: "2025-06-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(fields)
+library(dplyr)
+library(purrr)
+library(viridis)
+library(ggplot2)
+
+setwd("~/Desktop/MINES/COGCC-Risk-Analysis/IC_Scripts/2024-2025/sp_point_data")
+source("logisticSmoother.R")
+```
+
+```{r}
+# read in your data
+usable_pt_data <- st_read("usable_point_data.geojson")
+df             <- st_drop_geometry(usable_pt_data)
+
+# pull out coords + risk
+coord_mat <- do.call(rbind, strsplit(gsub("[()]", "", df$coords), ",")) %>%
+             apply(2, as.numeric) %>%
+             `colnames<-`(c("lon","lat"))
+y_clean   <- df$risk
+```
+
+```{r}
+# define quadrants
+lon_mid <- median(coord_mat[,"lon"])
+lat_mid <- median(coord_mat[,"lat"])
+quads <- list(
+  NE = which(coord_mat[,"lon"] >  lon_mid & coord_mat[,"lat"] >  lat_mid),
+  NW = which(coord_mat[,"lon"] <= lon_mid & coord_mat[,"lat"] >  lat_mid),
+  SW = which(coord_mat[,"lon"] <= lon_mid & coord_mat[,"lat"] <= lat_mid),
+  SE = which(coord_mat[,"lon"] >  lon_mid & coord_mat[,"lat"] <= lat_mid)
+)
+
+# quadrant summary
+quad_summary <- data.frame(
+  quadrant = names(quads),
+  total    = sapply(quads, length),
+  risk0    = sapply(quads, function(i) sum(y_clean[i] == 0, na.rm=TRUE)),
+  risk1    = sapply(quads, function(i) sum(y_clean[i] == 1, na.rm=TRUE))
+)
+
+print(quad_summary)
+```
+
+```{r}
+# --- NE quadrant ---
+coord_ne <- coord_mat[quads$NE, ]
+risk_ne  <- df$risk[quads$NE]
+uid_ne   <- df$unique_id[quads$NE]
+look_ne  <- logisticSmoother(coord_ne, risk_ne, lambda = 1e-1)
+
+# Predict at the same input locations (logit scale)
+nu_pred_ne <- predict(look_ne, x = coord_ne)
+
+# Convert from logit to probability
+prob_pred_ne <- exp(nu_pred_ne) / (1 + exp(nu_pred_ne))
+
+# Attach results to a data frame
+result_ne <- data.frame(
+  lon            = coord_ne[,1],
+  lat            = coord_ne[,2],
+  observed_risk  = risk_ne,
+  predicted_prob = prob_pred_ne
+)
+
+# Create a dataframe for NE quadrant only
+df_ne <- data.frame(
+  lon  = coord_ne[,1],
+  lat  = coord_ne[,2],
+  risk = factor(risk_ne)
+)
+
+# Plot observed
+ggplot(df_ne, aes(x = lon, y = lat)) +
+  geom_point(aes(color = risk), size = 2, alpha = 0.8) +
+  scale_color_manual(values = c("0" = "skyblue", "1" = "firebrick"),
+                     name = "Observed Risk",
+                     labels = c("0" = "No Spill", "1" = "Spill")) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Observed Risk in NE Quadrant",
+       x = "Longitude", y = "Latitude")
+
+# Plot predicted
+ggplot(result_ne, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Predicted Risk in NE Quadrant",
+       x = "Longitude", y = "Latitude")
+```
+
+```{r}
+# --- NW quadrant ---
+coord_nw <- coord_mat[quads$NW, ]
+risk_nw  <- df$risk[quads$NW]
+uid_nw   <- df$unique_id[quads$NW]
+# look_nw  <- logisticSmoother(coord_nw, risk_nw, lambda = 1e-1)
+
+# Predict at the same input locations (logit scale)
+nu_pred_nw <- predict(look_nw, x = coord_nw)
+
+# Convert from logit to probability
+prob_pred_nw <- exp(nu_pred_nw) / (1 + exp(nu_pred_nw))
+
+# Attach results to a data frame
+result_nw <- data.frame(
+  lon            = coord_nw[,1],
+  lat            = coord_nw[,2],
+  observed_risk  = risk_nw,
+  predicted_prob = prob_pred_nw
+)
+
+# Create a dataframe for NW quadrant only
+df_nw <- data.frame(
+  lon  = coord_nw[,1],
+  lat  = coord_nw[,2],
+  risk = factor(risk_nw)
+)
+
+# Plot observed
+ggplot(df_nw, aes(x = lon, y = lat)) +
+  geom_point(aes(color = risk), size = 2, alpha = 0.8) +
+  scale_color_manual(values = c("0" = "skyblue", "1" = "firebrick"),
+                     name = "Observed Risk",
+                     labels = c("0" = "No Spill", "1" = "Spill")) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Observed Risk in NW Quadrant",
+       x = "Longitude", y = "Latitude")
+
+# Plot predicted
+ggplot(result_nw, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Predicted Risk in NW Quadrant",
+       x = "Longitude", y = "Latitude")
+```
+Warning in gzfile(file, "wb") :
+  cannot open compressed file '/Users/ichittumuri/.local/share/rstudio/notebooks/E1CA5B64-9.sp_only/1/2351D60D6f3c5562/caucikw1vjmmx_t/c3b83f23704d4f0d99c28405ab136409.snapshot', probable reason 'No such file or directory'
+Error in gzfile(file, "wb") : cannot open the connection
+Error in grid.newpage() : 
+  QuartzBitmap_Output - unable to open file '/Users/ichittumuri/.local/share/rstudio/notebooks/E1CA5B64-9.sp_only/1/2351D60D6f3c5562/caucikw1vjmmx_t/_rs_chunk_plot_001.png'
+Error in dev.off() : 
+  QuartzBitmap_Output - unable to open file '/Users/ichittumuri/.local/share/rstudio/notebooks/E1CA5B64-9.sp_only/1/2351D60D6f3c5562/caucikw1vjmmx_t/_rs_chunk_plot_001.png'
+
+```{r}
+# --- SW quadrant ---
+coord_sw <- coord_mat[quads$SW, ]
+risk_sw  <- df$risk[quads$SW]
+uid_sw   <- df$unique_id[quads$SW]
+look_sw  <- logisticSmoother(coord_sw, risk_sw, lambda = 1e-1)
+
+# Predict at the same input locations (logit scale)
+nu_pred_sw <- predict(look_sw, x = coord_sw)
+
+# Convert from logit to probability
+prob_pred_sw <- exp(nu_pred_sw) / (1 + exp(nu_pred_sw))
+
+# Attach results to a data frame
+result_sw <- data.frame(
+  lon            = coord_sw[,1],
+  lat            = coord_sw[,2],
+  observed_risk  = risk_sw,
+  predicted_prob = prob_pred_sw
+)
+
+# Create a dataframe for SW quadrant only
+df_sw <- data.frame(
+  lon  = coord_sw[,1],
+  lat  = coord_sw[,2],
+  risk = factor(risk_sw)
+)
+
+# Plot observed
+ggplot(df_sw, aes(x = lon, y = lat)) +
+  geom_point(aes(color = risk), size = 2, alpha = 0.8) +
+  scale_color_manual(values = c("0" = "skyblue", "1" = "firebrick"),
+                     name = "Observed Risk",
+                     labels = c("0" = "No Spill", "1" = "Spill")) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Observed Risk in SW Quadrant",
+       x = "Longitude", y = "Latitude")
+
+# Plot predicted
+ggplot(result_sw, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Predicted Risk in SW Quadrant",
+       x = "Longitude", y = "Latitude")
+```
+
+```{r}
+# --- SE quadrant ---
+coord_se <- coord_mat[quads$SE, ]
+risk_se  <- df$risk[quads$SE]
+uid_se   <- df$unique_id[quads$SE]
+look_se  <- logisticSmoother(coord_se, risk_se, lambda = 1e-3)
+
+# Predict at the same input locations (logit scale)
+nu_pred_se <- predict(look_se, x = coord_se)
+
+# Convert from logit to probability
+prob_pred_se <- exp(nu_pred_se) / (1 + exp(nu_pred_se))
+
+# Attach results to a data frame
+result_se <- data.frame(
+  lon            = coord_se[,1],
+  lat            = coord_se[,2],
+  observed_risk  = risk_se,
+  predicted_prob = prob_pred_se
+)
+
+# Create a dataframe for SE quadrant only
+df_se <- data.frame(
+  lon  = coord_se[,1],
+  lat  = coord_se[,2],
+  risk = factor(risk_se)
+)
+
+# Plot observed
+ggplot(df_se, aes(x = lon, y = lat)) +
+  geom_point(aes(color = risk), size = 2, alpha = 0.8) +
+  scale_color_manual(values = c("0" = "skyblue", "1" = "firebrick"),
+                     name = "Observed Risk",
+                     labels = c("0" = "No Spill", "1" = "Spill")) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Observed Risk in SE Quadrant",
+       x = "Longitude", y = "Latitude")
+
+# Plot predicted
+ggplot(result_se, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(title = "Predicted Risk in SE Quadrant",
+       x = "Longitude", y = "Latitude")
+```
+
+```{r}
+# save all four into one file
+save(look_ne, look_nw, look_sw, #look_se,
+     file = "quad_fits_lambda-1.RData")
+
+#load("quad_fits_lambda1e-3.RData")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# lamda grid search
+
+```{r eval=FALSE, include=FALSE}
+# lamda grid search
+M          <- 10
+lambdaGrid <- 10^seq(-2, 2, length.out = M)
+
+bestLambda <- numeric(length(quads))
+names(bestLambda) <- names(quads)
+
+quadFits   <- vector("list", length(quads))
+names(quadFits) <- names(quads)
+
+par(mfrow = c(2,2), mar = c(4,4,2,1))
+
+for(q in names(quads)) {
+  idx       <- quads[[q]]
+  coords_q  <- coord_mat[idx, ]
+  y_q       <- y_clean[idx]
+  
+  # profile log-lik over the grid
+  logLike <- numeric(M)
+  look     <- NULL
+  for(k in M:1) {
+    nuOld        <- if(k < M) look$fitted.values else NULL
+    look         <- logisticSmoother(coords_q, y_q,
+                                     lambda = lambdaGrid[k],
+                                     nuOld  = nuOld)
+    logLike[k]   <- look$summary["lnProfileLike.FULL"]
+  }
+  
+  # plot the profile
+  plot(log10(lambdaGrid), logLike, type = "b", pch = 16,
+       main = paste0(q, " quadrant"),
+       xlab = expression(log[10](lambda)),
+       ylab = "Profile log-lik")
+  
+  # spline & find max
+  lGrid        <- seq(-2, 3, length.out = 250)
+  lookSpline   <- splint(log10(lambdaGrid), logLike, lGrid)
+  logLambdaHat <- lGrid[which.max(lookSpline)]
+  abline(v = logLambdaHat, lty = 2, col = "blue")
+  
+  # record & refit
+  bestLambda[q]    <- 10^logLambdaHat
+  quadFits[[q]]    <- logisticSmoother(coords_q, y_q,
+                                       lambda = bestLambda[q])
+  
+  message("Best λ for ", q, ": ", signif(bestLambda[q],3))
+}
+
+par(mfrow = c(1,1))
+
+print(bestLambda)
+```
+
+# fit quads 
+
+```{r}
+quad_names   <- names(quads)               # “NE”, “NW”, “SW”, “SE”
+fits         <- list()                     # to store logisticSmoother outputs
+results      <- list()                     # to store predicted data.frames
+obs_dfs      <- list()                     # to store observed‐risk data.frames
+
+for(q in quad_names) {
+  cat("Fitting", q) 
+  
+  # 1) pull indices & raw data
+  idx     <- quads[[q]]
+  coords  <- coord_mat[idx, ]
+  risk    <- y_clean[idx]
+
+  # 2) fit once, save it
+  fits[[q]] <- logisticSmoother(
+    s       = coords,
+    y       = risk,
+    lambda  = 1e-3
+  )
+
+  # 3) predict on the same coords
+  nu_hat       <- predict(fits[[q]], x = coords)
+  p_hat        <- exp(nu_hat)/(1+exp(nu_hat))
+
+  # 4) assemble and save
+  results[[q]] <- data.frame(
+    lon            = coords[,1],
+    lat            = coords[,2],
+    observed_risk  = risk,
+    predicted_prob = p_hat
+  )
+  obs_dfs[[q]] <- data.frame(
+    lon  = coords[,1],
+    lat  = coords[,2],
+    risk = factor(risk, levels=0:1)
+  )
+  cat("→", q, "done.\n")
+}
+
+cat("All quadrants complete.\n")
+
+# we get Error in nuNew - nuOld : non-conformable arrays
+```
+
+
+# Plot quads
+
+```{r}
+# Now e.g. to plot all four predicted maps:
+library(ggplot2)
+library(patchwork)   # for combining plots
+
+plots_pred <- lapply(quad_names, function(q) {
+  ggplot(results[[q]], aes(x = lon, y = lat)) +
+    geom_point(aes(color = predicted_prob), size = 2) +
+    scale_color_viridis_c(option = "D", name = "Pred. Risk") +
+    coord_fixed() +
+    theme_minimal() +
+    labs(title = paste0("Predicted Risk in ", q, " Quadrant"))
+})
+
+# stack them in a 2×2:
+(plots_pred[[1]] + plots_pred[[2]]) /
+ (plots_pred[[3]] + plots_pred[[4]])
+```
+

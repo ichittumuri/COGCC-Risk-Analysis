@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pyproj
 
+
 # Set working directory and display options
 os.chdir('/Users/ichittumuri/Desktop/MINES/COGCC-Risk-Analysis/Data')
 pd.options.display.max_columns = None
@@ -74,6 +75,40 @@ plt.title(f'Distribution of Geodesic LineString Lengths (0 to {max_length_to_plo
 plt.xlabel('Length (meters)')
 plt.ylabel('Frequency')
 plt.grid(True)
+plt.show()
+
+# Logscale plot of LineString lengths
+
+def geodesic_length(line):
+    return geod.geometry_length(line)
+
+line_lengths = []
+for geom in matched_flowlines_gdf['geometry']:
+    if isinstance(geom, MultiLineString):
+        for line in geom.geoms:
+            line_lengths.append(geodesic_length(line))
+    elif isinstance(geom, LineString):
+        line_lengths.append(geodesic_length(geom))
+
+# Convert to NumPy array for stats
+line_lengths = np.array(line_lengths)
+line_lengths = line_lengths[line_lengths > 0]  # avoid log(0) issues
+
+mean_len = np.mean(line_lengths)
+median_len = np.median(line_lengths)
+
+plt.figure(figsize=(10, 6))
+sns.histplot(line_lengths, bins=50, kde=False, log_scale=(True, False), color='skyblue')
+
+# Add vertical lines for mean and median
+plt.axvline(mean_len, color='red', linestyle='--', label=f'Mean: {mean_len:.1f} m')
+plt.axvline(median_len, color='green', linestyle='--', label=f'Median: {median_len:.1f} m')
+
+plt.title('Distribution of LineString Geodesic Lengths (Log X-Axis)')
+plt.xlabel('Length (meters, log scale)')
+plt.ylabel('Frequency')
+plt.grid(True, which='both', axis='x')
+plt.legend()
 plt.show()
 
 # ----------------------------------------

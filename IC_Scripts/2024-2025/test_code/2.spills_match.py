@@ -6,33 +6,23 @@ from shapely.geometry import MultiLineString, LineString, Point
 from shapely.ops import nearest_points
 from multiprocessing import Pool, cpu_count
 from sklearn.neighbors import BallTree
-
 import contextily as ctx
 from matplotlib.colors import ListedColormap, Normalize
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
-# ------------------------------------------------------------------------------
-# Set working directory
-# ------------------------------------------------------------------------------
 os.chdir('/Users/ichittumuri/Desktop/MINES/COGCC-Risk-Analysis/Data')
 
-# ------------------------------------------------------------------------------
-# 1. Load your augmented crude-oil lines and your raw spills
-# ------------------------------------------------------------------------------
 crudeoil_gdf = gpd.read_file("full_length_flowlines.geojson")
 spills_gdf   = gpd.read_file("spills.geojson")
 
-# ------------------------------------------------------------------------------
-# 2. Reproject both to a projected CRS for accurate meter distances (auto-UTM)
-# ------------------------------------------------------------------------------
+total = len(spills_gdf)
+print(f" Total spills:         {total}")
+
 projected_crs = spills_gdf.estimate_utm_crs()
 crudeoil_gdf  = crudeoil_gdf.to_crs(projected_crs)
 spills_gdf    = spills_gdf.to_crs(projected_crs)
 
-# ------------------------------------------------------------------------------
-# 3. Prepare counters and storage for matching
-# ------------------------------------------------------------------------------
 matched_spills      = []
 matched_spill_count = 0
 missing_geom_spill  = 0
@@ -106,8 +96,7 @@ print(f"No line match spills:      {no_match_spill}")
 # ------------------------------------------------------------------------------
 # 6. Create GeoDataFrame of matched spills
 # ------------------------------------------------------------------------------
-matched_spills_gdf = gpd.GeoDataFrame(matched_spills, crs=spills_gdf.crs)
-
+matched_spills_gdf = gpd.GeoDataFrame(matched_spills)
 # ------------------------------------------------------------------------------
 # 7. Swap in match_point as the new geometry
 # ------------------------------------------------------------------------------
@@ -214,5 +203,36 @@ plt.xlabel("Distance (meters)")
 plt.ylabel("Frequency")
 plt.xlim(0, 5000)
 plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Log scale histogram:
+
+# Drop NA and filter positive distances
+distances = matched_spills_gdf["match_distance_m"].dropna()
+distances = distances[distances > 0]
+
+# Compute mean and median
+mean_dist = distances.mean()
+median_dist = distances.median()
+
+# Log-spaced bins
+min_val = distances.min()
+max_val = distances.max()
+bins = np.logspace(np.log10(min_val), np.log10(max_val), 50)
+
+plt.figure(figsize=(10, 6))
+plt.hist(distances, bins=bins, edgecolor="black", color="skyblue")
+
+# Add vertical lines for mean and median
+plt.axvline(mean_dist, color='red', linestyle='--', label=f'Mean: {mean_dist:.1f} m')
+plt.axvline(median_dist, color='green', linestyle='--', label=f'Median: {median_dist:.1f} m')
+
+plt.xscale("log")
+plt.title("Distance Between Original and Matched Spill Points (Log X-Axis)")
+plt.xlabel("Distance (meters, log scale)")
+plt.ylabel("Frequency")
+plt.grid(axis='y')  # Only horizontal lines
+plt.legend()
 plt.tight_layout()
 plt.show()

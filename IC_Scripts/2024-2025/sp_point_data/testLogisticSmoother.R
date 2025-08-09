@@ -51,7 +51,7 @@ M<- 10
 lambdaGrid<- 10**seq( -2,2,length.out=M)
 logLike<- rep( NA, M)
 for( k in M:1){
-  if( k>1){
+  if( k<M){
     nuOld<- look2$fitted.values
   }
   else{

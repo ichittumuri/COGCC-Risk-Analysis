@@ -1,0 +1,268 @@
+---
+title: "boulder_longmont"
+output: pdf_document
+date: "2025-06-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(fields)
+
+setwd("~/Desktop/MINES/COGCC-Risk-Analysis/IC_Scripts/2024-2025/sp_point_data")
+source("logisticSmoother.R")
+
+usable_sf <- st_read("usable_point_data.geojson")
+df        <- st_drop_geometry(usable_sf)
+coord_mat <- do.call(rbind,
+               strsplit(gsub("[()]", "", df$coords), ",")) %>%
+             apply(2, as.numeric) %>%
+             `colnames<-`(c("lon","lat"))
+
+min_lon <- -105.85
+max_lon <- -104.79
+min_lat <-  39.42
+max_lat <-  40.68
+max_lon <- max_lon + 0.2
+
+in_bbox <- which(
+  coord_mat[,"lon"] >= min_lon &
+  coord_mat[,"lon"] <= max_lon &
+  coord_mat[,"lat"] >= min_lat &
+  coord_mat[,"lat"] <= max_lat
+)
+
+model_data <- data.frame(
+  lon  = coord_mat[in_bbox,1],
+  lat  = coord_mat[in_bbox,2],
+  risk = df$risk[in_bbox]) 
+
+ggplot(model_data, aes(x = lon, y = lat, color = factor(risk))) +
+  geom_point(size = 1.7, alpha = 0.8) +
+  scale_color_manual(
+    name   = "Risk (0/1)",
+    values = c("0" = "skyblue", "1" = "firebrick")
+  ) +
+  coord_fixed(
+    xlim = c(min_lon, max_lon),
+    ylim = c(min_lat, max_lat)
+  ) +
+  theme_gray() +
+  labs(
+    title = "Zoomed to Boulder–Greeley",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+```
+
+```{r}
+library(rsample)
+
+set.seed(123)
+split   <- initial_split(model_data, prop = 0.8, strata = "risk")
+train   <- training(split)
+test    <- testing(split)
+
+train %>% count(risk) %>% mutate(prop = n/sum(n))
+test  %>% count(risk) %>% mutate(prop = n/sum(n))
+```
+
+```{r}
+coord_train <- as.matrix(train[, c("lon","lat")])
+risk_train  <- train$risk     
+
+coord_test  <- as.matrix(test[,  c("lon","lat")])
+risk_test   <- test$risk       
+
+look_train <- logisticSmoother(coord_train, risk_train, lambda = 1e-1)
+
+nu_train        <- predict(look_train, x = coord_train)
+prob_pred_train <- exp(nu_train) / (1 + exp(nu_train))
+train_results   <- train %>% mutate(predicted_prob = prob_pred_train)
+
+nu_test         <- predict(look_train, x = coord_test)
+prob_pred_test  <- exp(nu_test)  / (1 + exp(nu_test))
+test_results    <- test  %>% mutate(predicted_prob = prob_pred_test)
+```
+
+```{r}
+ggplot(model_data, aes(x = lon, y = lat)) +
+  geom_point(aes(color = factor(risk)), size = 2, alpha = 0.8) +
+  scale_color_manual(
+    values = c("0" = "skyblue", "1" = "firebrick"),
+    name   = "Observed Risk",
+    labels = c("0" = "No Spill", "1" = "Spill")
+  ) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Observed Spill Risk",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+
+ggplot(train_results, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Predicted Risk – TRAIN Set",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+
+ggplot(test_results, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Predicted Risk – TEST Set",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+```
+
+
+```{r}
+# make sure your smoother is in scope
+setwd("~/Desktop/MINES/COGCC-Risk-Analysis/IC_Scripts/2024-2025/sp_point_data")
+source("LambdaGridSearch.R")
+
+coord_model <- as.matrix(model_data[, c("lon","lat")])
+risk_model  <- model_data$risk
+
+# 1) compute the profile & pick bestLambda
+profile <- LambdaGridSearch(coord_model, risk_model)
+
+# 2) plot *at the top level* so the notebook captures it
+PlotLambdaProfile(profile)
+
+# 3) now do your final fit
+bestLambda <- profile$bestLambda
+MLEFit     <- logisticSmoother(
+  coord_model,
+  risk_model,
+  lambda = bestLambda
+)
+```
+ 
+
+
+
+
+
+
+
+
+```{r}
+
+coord_model  <- as.matrix(model_data[,  c("lon","lat")])
+risk_model   <- model_data$risk       
+
+# --- grid‐search over lambda on the TRAIN set to find MLE of λ ---
+M <- 10
+lambdaGrid <- 10^seq(-2, 2, length.out = M)
+logLike    <- numeric(M)
+
+for (k in M:1) {
+  # warm-start
+  if (k < M) {
+    nuOld <- look2$fitted.values
+  } else {
+    nuOld <- NULL
+  }
+
+  # positional args: coord, response, then named lambda & nuOld
+  look2 <- logisticSmoother(
+    coord_model,
+    risk_model,
+    lambda = lambdaGrid[k],
+    nuOld  = nuOld
+  )
+
+  logLike[k] <- look2$summary["lnProfileLike.FULL"]
+  cat("λ =", format(lambdaGrid[k], digits = 3),
+      "→ logLik =", round(logLike[k], 3), "\n")
+}
+
+# plot coarse grid
+plot(
+  log10(lambdaGrid), logLike, type = "b",
+  xlab = "log10(λ)", ylab = "Profile log likelihood"
+)
+
+# spline‐interpolate on a finer grid
+lGrid          <- seq(-2, 3, length.out = 250)
+profile_spline <- splint(log10(lambdaGrid), logLike, lGrid)
+lines(lGrid, profile_spline, col = "blue")
+
+# find the maximizer
+logLambdaHat <- lGrid[which.max(profile_spline)]
+abline(v = logLambdaHat, col = "blue", lty = 2)
+cat("Estimated log10(λ) =", round(logLambdaHat, 3), "\n")
+
+# re-fit at the best λ
+bestLambda <- 10^logLambdaHat
+cat("Ideal λ =", signif(bestLambda, 3), "\n")
+MLEFit     <- logisticSmoother(
+  coord_model,
+  risk_model,
+  lambda = bestLambda
+)
+```
+ 
+```{r}
+nu_train_mle   <- predict(MLEFit, coord_train)
+prob_train_mle <- exp(nu_train_mle) / (1 + exp(nu_train_mle))
+train_mle      <- train %>% mutate(predicted_prob = prob_train_mle)
+
+nu_test_mle    <- predict(MLEFit, coord_test)
+prob_test_mle  <- exp(nu_test_mle)  / (1 + exp(nu_test_mle))
+test_mle       <- test  %>% mutate(predicted_prob = prob_test_mle)
+
+ggplot(model_data, aes(x = lon, y = lat)) +
+  geom_point(aes(color = factor(risk)), size = 2, alpha = 0.8) +
+  scale_color_manual(
+    values = c("0" = "skyblue", "1" = "firebrick"),
+    name   = "Observed Risk",
+    labels = c("0" = "No Spill", "1" = "Spill")
+  ) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Observed Spill Risk",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+
+ggplot(train_mle, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Predicted Risk – TRAIN Set (MLE λ)",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+
+ggplot(test_mle, aes(x = lon, y = lat)) +
+  geom_point(aes(color = predicted_prob), size = 2) +
+  scale_color_viridis_c(option = "D", name = "Predicted Risk") +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Predicted Risk – TEST Set (MLE λ)",
+    x     = "Longitude",
+    y     = "Latitude"
+  )
+```
+ 
+ 
