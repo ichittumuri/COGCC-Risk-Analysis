@@ -302,7 +302,149 @@ print(f"Spills ≤85.07 m after  dedup: {after}")
 spills_under_85m.to_file("updated_spills_under_85m.geojson", driver="GeoJSON")
 
 # =============================================================================
-# 8. Dataset summary
+# 8. Plot map of spills & flowlines
+# =============================================================================
+spills_under_85m = spills_under_85m[spills_under_85m.geometry.type.isin(['Point', 'MultiPoint'])].copy()
+
+def plot_flowlines_and_spills(flowlines_gdf, spills_gdf, distance_col='match_distance_m', zoom_bounds=None):
+    flowlines = flowlines_gdf.to_crs(epsg=3857)
+    spills = spills_gdf.to_crs(epsg=3857)
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    flowlines.plot(
+        ax=ax,
+        color="#0B50B8",  # vivid blue
+        linewidth=1.5,
+        alpha=0.9,
+        zorder=2
+    )
+
+    distances = spills[distance_col]
+    norm = mcolors.Normalize(vmin=distances.min(), vmax=distances.max())
+    
+    cmap = matplotlib.colormaps["YlOrRd"]
+    # truncated_cmap = ListedColormap(original_cmap(np.linspace(0.12, 1.0, 256)))
+    # single_color_cmap = LinearSegmentedColormap.from_list(
+    # "custom_blue", 
+    # ["#F95656", "#000000"]  # light red -> dark red
+    # )
+
+    spills.plot(
+        ax=ax,
+        column=distance_col,
+        cmap=cmap,
+        norm=norm,
+        markersize=10,
+        edgecolor="black",
+        linewidth=0.3,
+        legend=True,
+        zorder=3,
+        legend_kwds={
+            'label': "Distance to Flowline (m)",
+            'shrink': 0.5
+        }
+    )
+
+    ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, zorder=1)
+
+    if zoom_bounds:
+        x_min, x_max, y_min, y_max = zoom_bounds
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+
+    ax.set_title("Spills Relocated to Nearest Flowline, Colored by Match Distance (≤85.07m)", fontsize=16)
+    ax.set_axis_off()
+    plt.tight_layout()
+    plt.show()
+
+# Call the function
+plot_flowlines_and_spills(
+    flowlines_gdf=flowlines_gdf,
+    spills_gdf=spills_under_85m,
+    distance_col='match_distance_m'
+)
+
+# =============================================================================
+# 9. Plot cropped map (Boulder–Greeley area)
+# =============================================================================
+def plot_cropped_spills(
+    flowlines_gdf,
+    spills_gdf,
+    bbox_wgs84,  # (minx, miny, maxx, maxy) in EPSG:4326
+    distance_col="match_distance_m",
+    title="Spills ≤ 85.07 m — Cropped View",
+    out_png=None
+):
+    # bbox geodataframe in Web Mercator
+    bbox_poly = box(*bbox_wgs84)
+    bbox_gdf = gpd.GeoDataFrame(geometry=[bbox_poly], crs="EPSG:4326").to_crs(epsg=3857)
+    x_min, y_min, x_max, y_max = bbox_gdf.total_bounds
+    bbox_geom = bbox_gdf.geometry.iloc[0]
+
+    # Ensure spills are point/multipoint only
+    spills_pts = spills_gdf[spills_gdf.geometry.type.isin(["Point", "MultiPoint"])].copy()
+    if spills_pts.empty:
+        print("No point spills to plot.")
+        return
+
+    # Project + clip
+    flowlines_m = flowlines_gdf.to_crs(epsg=3857).clip(bbox_geom)
+    spills_m    = spills_pts.to_crs(epsg=3857).clip(bbox_geom)
+
+    if flowlines_m.empty and spills_m.empty:
+        print("No features within the provided bbox after clipping.")
+        return
+
+    # Truncated YlOrRd colormap
+    cmap = matplotlib.colormaps["YlOrRd"]
+    # truncated_cmap = ListedColormap(cmap(np.linspace(0.25, 1.0, 256)))
+    # single_color_cmap = LinearSegmentedColormap.from_list(
+    #     "custom_blue", 
+    #     ["#F95656", "#000000"]  # light red -> dark red
+    #)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    if not flowlines_m.empty:
+        flowlines_m.plot(ax=ax, color="#0B50B8", linewidth=1, alpha=0.97, zorder=2)
+    if not spills_m.empty:
+        d = spills_m[distance_col]
+        norm = mcolors.Normalize(vmin=float(d.min()), vmax=float(d.max()))
+        spills_m.plot(
+            ax=ax,
+            column=distance_col,
+            cmap=cmap,
+            norm=norm,
+            markersize=10,
+            edgecolor="black",
+            linewidth=0.3,
+            legend=True,
+            zorder=3,
+            legend_kwds={
+                'label': "Distance to Flowline (m)",
+                'shrink': 0.5
+            }
+        )
+    ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, zorder=1)
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_title(title, fontsize=14, color="#444444")
+    ax.set_axis_off()
+    plt.tight_layout()
+    plt.show()
+
+bbox = (-106.0, 39.3, -103.9, 40.9)  # WGS84
+plot_cropped_spills(
+    flowlines_gdf=flowlines_gdf,
+    spills_gdf=spills_under_85m,
+    bbox_wgs84=bbox,
+    title="Spills Relocated to Nearest Flowline (≤85.07m) — Boulder–Greeley Area")
+
+# =============================================================================
+# 10. Dataset summary
 # =============================================================================
 def summarize_spill_datasets(spills_file, matched_file, matched_under_file):
     spills_raw = gpd.read_file(spills_file)
@@ -332,7 +474,7 @@ summary = summarize_spill_datasets(
 )
 
 # =============================================================================
-# 9. Join spills with flowline attributes (prefer spill columns on conflicts)
+# 11. Join spills with flowline attributes (prefer spill columns on conflicts)
 # =============================================================================
 joined_rows = []
 
