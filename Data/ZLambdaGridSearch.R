@@ -29,7 +29,8 @@ LambdaGridSearch <- function(coord_model,
   
   plot(
     log10(lambdaGrid), logLike, type = "b",
-    xlab = "log10(λ)", ylab = "Profile log likelihood"
+    xlab = "log10(λ)", ylab = "Profile log likelihood",
+    ylim = c(min(logLike) - 2, max(logLike) + 1)
   )
   
   lGrid <- seq(fine_range[1], fine_range[2], length.out = fine_length)
