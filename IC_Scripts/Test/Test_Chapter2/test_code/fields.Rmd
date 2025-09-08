@@ -1,0 +1,208 @@
+---
+title: "spatial process"
+output: pdf_document
+date: "2025-03-03"
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+# New cell= Cmd + Opt + I or alt + Cmd + I 
+# Run = Cmd + enter 
+# Comment out a whole chunk of code = Cmd + Shift + C
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+knitr::opts_knit$set(root.dir = "/Users/ichittumuri/Desktop/MINES/COGCC-Risk-Analysis/Data")
+```
+
+```{r}
+# Load required libraries
+library(sf)        # For spatial data handling
+library(spBayes)   # For Bayesian spatial models
+library(MASS)      # For generalized linear models
+library(spdep)     # For spatial correlation structures
+library(ggplot2)   # For visualization
+library(dplyr)     # For data wrangling
+library(fields)     # Spatial Kriging and thin-plate splines
+library(leaflet)
+library(scales)  # To rescale predictions between 0-1
+```
+
+# Import Dataset 
+
+```{r cars}
+df <- st_read("flowlines_pop_dems.geojson")
+```
+
+```{r}
+colSums(is.na(df))  # Check missing data per column
+```
+
+```{r}
+# Filter rows where root_cause is NA and count by risk values
+table(df$risk[is.na(df$root_cause)])
+```
+
+```{r}
+unique(df$root_cause)
+```
+
+```{r}
+df$root_cause[is.na(df$root_cause)] <- "None"
+```
+
+```{r}
+str(df)
+```
+
+```{r}
+unique(df$risk)
+```
+
+```{r}
+df <- df %>% select(-Max_Elevation, -Min_Elevation)
+```
+
+```{r}
+# Duplicate data set 
+df_encoded <- df
+```
+
+```{r}
+# One-hot encoding
+df_encoded$operator_number <- as.factor(df$operator_number)
+df_encoded$flowline_id <- as.factor(df$flowline_id)
+df_encoded$location_id <- as.factor(df$location_id)
+df_encoded$status <- as.factor(df$status)
+df_encoded$fluid <- as.factor(df$fluid)
+df_encoded$material <- as.factor(df$material)
+df_encoded$location_type <- as.factor(df$location_type)
+df_encoded$root_cause <- as.factor(df$root_cause)
+```
+
+```{r}
+str(df_encoded)
+```
+
+```{r}
+colSums(is.na(df_encoded))  # Check missing data per column
+```
+
+# EDA
+
+```{r}
+library(leaflet)
+
+leaflet(df_encoded) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolylines(color = ~ifelse(risk == 1, "red", "blue"), weight = 2, opacity = 0.7) %>%
+  addLegend("bottomright", colors = c("blue", "red"), labels = c("No Spill", "Spill"),
+            title = "Risk Level")
+```
+
+# Preprocessing 
+
+```{r}
+df_model <- df_encoded
+
+# Extract centroid coordinates
+df_model$lon <- st_coordinates(st_centroid(df_model$geometry))[,1]
+df_model$lat <- st_coordinates(st_centroid(df_model$geometry))[,2]
+df_model <- df_model[!is.na(df_model$lon) & !is.na(df_model$lat), ]
+```
+
+```{r}
+# glm_model <- glm(risk ~ operator_number + flowline_id + location_id + status + 
+#                  fluid + material + location_type + root_cause + 
+#                  diameter_in + length_ft + max_operating_pressure + 
+#                  line_age_yr + average_pop_density + Avg_Elevation, 
+#                  data = df_model, 
+#                  family = binomial)
+
+glm_model <- glm(risk ~ diameter_in + length_ft + max_operating_pressure + 
+                 line_age_yr + average_pop_density + Avg_Elevation, 
+                 data = df_model, 
+                 family = binomial)
+
+summary(glm_model)
+```
+
+```{r}
+# Extract residuals from logistic regression
+df_model$residuals <- residuals(glm_model, type = "deviance")
+
+# Create spatial weights matrix based on nearest neighbors of centroids
+coords <- cbind(df_model$lon, df_model$lat)
+nb <- knn2nb(knearneigh(coords, k = 5))  # 5 nearest neighbors
+lw <- nb2listw(nb, style = "W")
+
+# Moran’s I test for spatial autocorrelation
+moran_test <- moran.test(df_model$residuals, lw)
+print(moran_test)
+```
+
+
+```{r}
+# Fit thin-plate spline (Tps) model to capture spatial structure
+# spatial process function instead of tps 
+spatial_model <- Tps(coords, df_model$residuals)
+
+# Check spatial model summary
+summary(spatial_model)
+```
+
+```{r}
+df_model$spatial_effect <- predict(spatial_model, coords)
+```
+
+```{r}
+glm_spatial <- glm(risk ~ diameter_in + length_ft + max_operating_pressure + 
+                   line_age_yr + average_pop_density + Avg_Elevation + spatial_effect, 
+                   data = df_model, 
+                   family = binomial)
+
+summary(glm_spatial)
+```
+
+```{r}
+df_model$risk_pred <- predict(glm_spatial, type = "response")
+df_model$risk_pred_scaled <- scales::rescale(df_model$risk_pred, to = c(0,1))
+```
+
+```{r}
+library(RColorBrewer)       # High-contrast perceptual color scales
+
+# Define the color scale to match the image
+risk_palette <- colorNumeric(
+  palette = rev(brewer.pal(11, "RdYlBu")),  # Reverse to match image
+  domain = df_model$risk_pred_scaled
+)
+
+leaflet(df_model) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%  # Add background map
+  addPolylines(
+    color = ~risk_palette(risk_pred_scaled),  # Use continuous color scale
+    weight = 3,  # Make lines thicker for visibility
+    opacity = 0.9  # Make colors stand out more
+  ) %>%
+  addLegend(
+    "bottomright", 
+    pal = risk_palette, 
+    values = df_model$risk_pred_scaled, 
+    title = "Predicted Risk Level",
+    labFormat = labelFormat(transform = function(x) round(x, 2))  # Round legend values
+  )
+```
+
+```{r}
+# Compare AIC values (lower AIC = better fit)
+AIC(glm_model)  # Logistic regression without spatial effects
+AIC(glm_spatial)  # Logistic regression with spatial effects from `fields`
+```
+
+create surface plot
+std error uncertain 
+
+
+

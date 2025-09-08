@@ -1,0 +1,89 @@
+library(leaflet)
+library(sf)
+
+setwd("/Users/ichittumuri/Desktop/MINES/COGCC-Risk-Analysis/Data")
+
+# Read in the data
+flowlines <- st_read("flowlines.geojson")
+crudeoil <- st_read("crudeoil_offlocation.geojson")
+spills <- st_read("spills.geojson")
+
+# Transform all datasets to WGS84
+flowlines <- st_transform(flowlines, 4326)
+crudeoil <- st_transform(crudeoil, 4326)
+spills <- st_transform(spills, 4326)
+
+# Create interactive leaflet map
+leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  
+  # Add both flowline datasets
+  addPolylines(
+    data = flowlines,
+    color = "blue",
+    weight = 2,
+    opacity = 0.6,
+    group = "Flowlines"
+  ) %>%
+  addPolylines(
+    data = crudeoil,
+    color = "blue",
+    weight = 2,
+    opacity = 0.6,
+    group = "Crude Oil Flowlines"
+  ) %>%
+  
+  # Add spills
+  addCircleMarkers(
+    data = spills,
+    color = "red",
+    radius = 2,
+    stroke = FALSE,
+    fillOpacity = 0.8,
+    group = "Spills"
+  ) %>%
+  
+  # Add a legend
+  addLegend(
+    position = "bottomright",
+    colors = c("blue", "blue", "red"),
+    labels = c("Flowlines", "Crude Oil Flowlines", "Spills"),
+    title = "Pipeline & Spill Data"
+  )
+
+
+# Matched (processed) files
+flowlines_matched <- st_read("updated_full_flowlines.geojson")
+spills_matched <- st_read("updated_spills.geojson")
+
+# Transform to WGS84
+flowlines_matched <- st_transform(flowlines_matched, 4326)
+spills_matched <- st_transform(spills_matched, 4326)
+
+# Filter to only points
+spills_matched <- spills_matched[st_geometry_type(spills_matched) %in% c("POINT", "MULTIPOINT"), ]
+
+# Plot matched data
+leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolylines(
+    data = flowlines_matched,
+    color = "blue",
+    weight = 2,
+    opacity = 0.6,
+    group = "Flowlines"
+  ) %>%
+  addCircleMarkers(
+    data = spills_matched,
+    color = "red",
+    radius = 2,
+    stroke = FALSE,
+    fillOpacity = 0.8,
+    group = "Spills"
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    colors = c("blue", "red"),
+    labels = c("Flowlines", "Spills"),
+    title = "Matched Data"
+  )

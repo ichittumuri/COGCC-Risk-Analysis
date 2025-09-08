@@ -1,0 +1,83 @@
+---
+title: "Python_to_RStudio"
+output: pdf_document
+date: "2025-02-08"
+---
+
+```{r setup, include=FALSE}
+# New cell= command, option, I or alt, windows symbol, I 
+# Run = windows symbol, enter 
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+knitr::opts_knit$set(root.dir = "/Users/ichittumuri/Desktop/MINES/COGCC-Risk-Analysis/Data")
+```
+
+```{r}
+library(sf)
+library(ggplot2)
+library(leaflet)
+library(geojsonio)
+```
+
+```{r}
+geo_data <- st_read("flowlines_pop_dems.geojson")
+```
+
+```{r}
+anyNA(geo_data$risk_probability)
+```
+
+```{r}
+str(geo_data)
+```
+
+```{r}
+leaflet(data = geo_data) %>%
+  addTiles() %>%
+  addPolygons()
+```
+
+
+```{r}
+install.packages("ggplot2")  # Install if needed
+library(ggplot2)
+
+# Create a histogram
+ggplot(geo_data, aes(x = risk_probability)) +
+  geom_histogram(binwidth = 0.05, fill = "dodgerblue", color = "black") +
+  labs(title = "Distribution of Risk Probability",
+       x = "Risk Probability",
+       y = "Frequency") +
+  theme_minimal()
+
+```
+
+```{r}
+library(leaflet)
+library(sf)  # If working with spatial data
+
+# Example: Choose a column to visualize (e.g., "population_density")
+column_to_visualize <- "risk_probability"
+
+# Create a color palette
+pal <- colorNumeric(palette = "YlOrRd", domain = geo_data[[column_to_visualize]])
+
+# Generate the leaflet map
+leaflet(data = geo_data) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal(geo_data[[column_to_visualize]]),  # Color based on data values
+    weight = 0,  # No border
+    opacity = 0,  # No stroke
+    fillOpacity = 1,  # Fully colored polygons
+    popup = ~paste(column_to_visualize, ":", geo_data[[column_to_visualize]])  # Interactive popups
+  ) %>%
+  addLegend(pal = pal, values = geo_data[[column_to_visualize]], 
+            title = column_to_visualize, opacity = 1)
+
+```
+
+
+
+
