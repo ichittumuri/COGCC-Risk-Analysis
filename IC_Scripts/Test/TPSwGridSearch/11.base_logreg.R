@@ -154,7 +154,7 @@ mcc <- ifelse(
 )
 
 metrics <- tibble::tibble(
-  model           = "SpatialOnly",
+  model           = "GLMOnly",
   set             = "TEST",
   n               = length(y_true),
   log_likelihood  = loglik,

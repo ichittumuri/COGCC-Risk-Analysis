@@ -159,7 +159,7 @@ combined.to_file("final_dataset_full.geojson", driver="GeoJSON")
 desired_subset = [
     'unique_id', 'status', 'flowline_action', 'location_type', 'fluid', 'material',
     'diameter_in', 'length_ft', 'max_operating_pressure', 'line_age_yr', 'elevation',
-    'risk', 'geometry'
+    'match_distance_m', 'risk', 'geometry' 
 ]
 
 final_subset = combined[[c for c in desired_subset if c in combined.columns]]

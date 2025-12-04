@@ -46,18 +46,23 @@ df <- usable_sf |>
     lat <=  40.68
   )
 
-model_data <- df |>
-  select(lon, lat, risk)
-
-model_data %>%
-  count(risk) %>%
-  mutate(prop = n / sum(n)) %>%
-  print()
+# # =============================================================================
+# # 4) Use full dataset (no downsampling)
+# # =============================================================================
+# df_balanced <- df
+# 
+# cat("\n--- FULL DATASET (no downsampling) ---\n")
+# df_balanced %>%
+#   count(risk) %>%
+#   mutate(prop = n / sum(n)) %>%
+#   print()
+# 
+# write.csv(df_balanced, "df_balanced.csv", row.names = FALSE)
 
 # =============================================================================
 # 4) Downsample 0-risk points to ~5% spills, (stratified sampling or weighted sample???)
 # =============================================================================
-set.seed(123) 
+set.seed(123)
 
 spills <- df %>% filter(risk == 1)
 non_spills <- df %>% filter(risk == 0)

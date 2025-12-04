@@ -1,0 +1,24 @@
+---
+title: "CVs"
+output: pdf_document
+date: "2025-10-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("~/Desktop/MINES/COGCC-Risk-Analysis/Data")
+df_balanced <- read.csv("df_balanced.csv", stringsAsFactors = FALSE)
+
+form <- risk ~ status + flowline_action + location_type + fluid + material +
+  diameter_in + length_ft + max_operating_pressure + elevation + line_age_yr
+```
+
+
+```{r}
+cat_cols <- c("status", "flowline_action", "location_type", "fluid", "material")
+df_balanced[cat_cols] <- lapply(df_balanced[cat_cols], factor)
+```
+
