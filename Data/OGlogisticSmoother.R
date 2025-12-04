@@ -1,4 +1,4 @@
-logisticSmoother<- function(s, y, lambda, nuOld=NULL){
+logisticSmoother<- function(s, y, lambda, nuOld=NULL, weights = NULL){ # added "weights = NULL"
   # assume y are 0,1 s
   if( is.null(nuOld)){
   pStart<- mean(y)

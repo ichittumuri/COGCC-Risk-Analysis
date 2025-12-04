@@ -3,7 +3,8 @@ LambdaGridSearch <- function(coord_model,
                              M          = 10,
                              exp_range  = c(-2,  2),
                              fine_range = c(-2,  3),
-                             fine_length = 250) {
+                             fine_length = 250,
+                             ...) { # added "..."
   
   # 1) set up coarse grid
   lambdaGrid <- 10^seq(exp_range[1], exp_range[2], length.out = M)
