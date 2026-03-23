@@ -89,9 +89,9 @@ MLEFit <- logisticSmoother(
 # prob_all_mle <- plogis(nu_all_mle)
 
 # spatial part at TEST locations
-f_hat_test <- as.numeric(predict(MLEFit, test_coord_model))
+f_hat_test <- as.numeric(predict(MLEFit, test_coord_model)) # ≈ ĝ(s)
 
-# fixed-effects (GLM) part at TEST locations
+# fixed-effects (GLM) part at TEST locations  # = Zβ̂
 eta_glm_test <- as.vector(Z_test %*% betaHat)
 
 # full linear predictor: eta = Zβ + f(s)

@@ -246,3 +246,5 @@ spatial_Z_weighted_preds <- data.frame(
 )
 
 write_csv(spatial_Z_weighted_preds, "predictions_spatial_plus_z_weighted.csv")
+
+save(prob_all_mle, test_data, file = "bootstrap_inputs.RData")
